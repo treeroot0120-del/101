@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>도형 닮음 탐구 게임</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; user-select: none; }
+        .canvas-container { touch-action: none; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <!-- Header Navigation -->
+    <header class="bg-white border-b border-slate-200 py-3 px-6 flex justify-between items-center shadow-sm">
+        <div class="flex items-center space-x-3">
+            <span class="text-2xl">📐</span>
+            <h1 class="text-lg font-bold text-slate-900">도형 닮음 탐구 랩</h1>
+        </div>
+        <div class="flex items-center space-x-2">
+            <button id="level1-btn" onclick="switchLevel(1)" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-indigo-600 text-white shadow-sm transition">스테이지 1 (삼각형)</button>
+            <button id="level2-btn" onclick="switchLevel(2)" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition">스테이지 2 (사다리꼴)</button>
+            <button onclick="resetCurrentLevel()" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-rose-50 text-rose-600 hover:bg-rose-100 transition">초기화</button>
+        </div>
+    </header>
+
+    <!-- Main Canvas Arena -->
+    <main class="flex-1 flex flex-col p-4 max-w-5xl mx-auto w-full gap-3">
+        
+        <!-- Toolbar & Counter -->
+        <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap justify-between items-center gap-2">
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-semibold text-slate-500">선택 도형:</span>
+                <span id="selected-info" class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">없음</span>
+                <button onclick="rotateSelected(15)" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1">🔄 회전(+15°)</button>
+                <button onclick="duplicateSelected()" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold transition flex items-center gap-1">📋 복사하기</button>
+                <button onclick="deleteSelected()" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-bold transition flex items-center gap-1">🗑️ 삭제</button>
+            </div>
+            <div class="flex items-center gap-3">
+                <span id="score-counter" class="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-lg">복사본: 0개</span>
+                <button onclick="checkCompletion()" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-sm transition">완성 확인</button>
+            </div>
+        </div>
+
+        <!-- Canvas Area -->
+        <div class="flex-1 bg-white border border-slate-200 rounded-2xl relative overflow-hidden flex flex-col shadow-sm canvas-container min-h-[500px]">
+            <canvas id="gameCanvas" class="w-full h-full cursor-grab active:cursor-grabbing"></canvas>
+        </div>
+    </main>
+
+    <!-- Simple Notification Modal -->
+    <div id="message-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center hidden">
+        <div class="bg-white border border-slate-100 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl text-center">
+            <div id="modal-icon" class="text-4xl mb-2">🎉</div>
+            <h3 id="modal-title" class="text-lg font-bold text-slate-900 mb-1">성공!</h3>
+            <p id="modal-desc" class="text-xs text-slate-600 mb-4">목표 도형을 완벽하게 채웠습니다.</p>
+            <button onclick="closeModal()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition">확인</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let currentLevel = 1;
+        let shapes = [];
+        let selectedShapeIndex = null;
+        let isDragging = false;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+        let targetShapeObj = null;
+
+        const levels = {
+            1: {
+                title: "삼각형 닮음",
+                targetShape: {
+                    points: [{x: 0, y: -130}, {x: -65, y: 90}, {x: 65, y: 90}],
+                    color: 'rgba(249, 115, 22, 0.1)',
+                    strokeColor: '#f97316',
+                    labels: [{text: 'C', x: 0, y: -145}, {text: 'A', x: -75, y: 105}, {text: 'B', x: 75, y: 105}]
+                },
+                sourceShape: {
+                    points: [{x: 0, y: -65}, {x: -32, y: 45}, {x: 32, y: 45}],
+                    color: 'rgba(59, 130, 246, 0.2)',
+                    strokeColor: '#3b82f6',
+                    labels: [{text: 'F', x: 0, y: -75}, {text: 'D', x: -40, y: 55}, {text: 'E', x: 40, y: 55}],
+                    initialX: -200,
+                    initialY: 80
+                },
+                requiredCount: 4
+            },
+            2: {
+                title: "사다리꼴 닮음",
+                targetShape: {
+                    points: [{x: -45, y: -110}, {x: 75, y: -110}, {x: 45, y: 90}, {x: -80, y: 90}],
+                    color: 'rgba(239, 68, 68, 0.1)',
+                    strokeColor: '#ef4444',
+                    labels: [{text: 'D', x: -55, y: -110}, {text: 'C', x: 85, y: -110}, {text: 'B', x: 55, y: 105}, {text: 'A', x: -95, y: 105}]
+                },
+                sourceShape: {
+                    points: [{x: -22, y: -55}, {x: 37, y: -55}, {x: 22, y: 45}, {x: -40, y: 45}],
+                    color: 'rgba(34, 197, 94, 0.2)',
+                    strokeColor: '#22c55e',
+                    labels: [{text: 'H', x: -32, y: -55}, {text: 'G', x: 47, y: -55}, {text: 'F', x: 30, y: 55}, {text: 'E', x: -50, y: 55}],
+                    initialX: -200,
+                    initialY: 80
+                },
+                requiredCount: 4
+            }
+        };
+
+        class PolygonShape {
+            constructor(config, x, y) {
+                this.points = config.points;
+                this.color = config.color;
+                this.strokeColor = config.strokeColor;
+                this.labels = config.labels;
+                this.x = x;
+                this.y = y;
+                this.rotation = 0;
+            }
+
+            draw(ctx, isSelected) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+
+                ctx.beginPath();
+                this.points.forEach((p, idx) => {
+                    if (idx === 0) ctx.moveTo(p.x, p.y);
+                    else ctx.lineTo(p.x, p.y);
+                });
+                ctx.closePath();
+
+                ctx.fillStyle = this.color;
+                ctx.fill();
+
+                ctx.lineWidth = isSelected ? 2.5 : 1.5;
+                ctx.strokeStyle = isSelected ? '#4f46e5' : this.strokeColor;
+                ctx.stroke();
+
+                if (this.labels) {
+                    ctx.font = 'bold 12px Inter, sans-serif';
+                    ctx.fillStyle = '#334155';
+                    this.labels.forEach(l => {
+                        ctx.fillText(l.text, l.x, l.y);
+                    });
+                }
+
+                ctx.restore();
+            }
+
+            contains(px, py) {
+                const cos = Math.cos(-this.rotation);
+                const sin = Math.sin(-this.rotation);
+                const dx = px - this.x;
+                const dy = py - this.y;
+                const localX = dx * cos - dy * sin;
+                const localY = dx * sin + dy * cos;
+
+                let inside = false;
+                for (let i = 0, j = this.points.length - 1; i < this.points.length; j = i++) {
+                    const xi = this.points[i].x, yi = this.points[i].y;
+                    const xj = this.points[j].x, yj = this.points[j].y;
+                    
+                    const intersect = ((yi > localY) !== (yj > localY)) &&
+                        (localX < (xj - xi) * (localY - yi) / (yj - yi) + xi);
+                    if (intersect) inside = !inside;
+                }
+                return inside;
+            }
+        }
+
+        function initLevel(levelNum) {
+            currentLevel = levelNum;
+            const lvl = levels[levelNum];
+
+            document.getElementById('level1-btn').className = levelNum === 1 ? "px-3 py-1.5 rounded-lg text-sm font-semibold bg-indigo-600 text-white shadow-sm transition" : "px-3 py-1.5 rounded-lg text-sm font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition";
+            document.getElementById('level2-btn').className = levelNum === 2 ? "px-3 py-1.5 rounded-lg text-sm font-semibold bg-indigo-600 text-white shadow-sm transition" : "px-3 py-1.5 rounded-lg text-sm font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition";
+
+            const centerX = canvas.width / 2 + 60;
+            const centerY = canvas.height / 2;
+
+            targetShapeObj = new PolygonShape(lvl.targetShape, centerX, centerY);
+            
+            shapes = [];
+            const source = new PolygonShape(lvl.sourceShape, lvl.sourceShape.initialX + canvas.width/2, lvl.sourceShape.initialY);
+            shapes.push(source);
+
+            selectedShapeIndex = 0;
+            updateUI();
+        }
+
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            if (!targetShapeObj) {
+                initLevel(currentLevel);
+            } else {
+                targetShapeObj.x = canvas.width / 2 + 50;
+                targetShapeObj.y = canvas.height / 2;
+            }
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        function getCanvasCoordinates(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            return { x: clientX - rect.left, y: clientY - rect.top };
+        }
+
+        canvas.addEventListener('mousedown', startDrag);
+        canvas.addEventListener('touchstart', startDrag, {passive: false});
+        canvas.addEventListener('mousemove', drag);
+        canvas.addEventListener('touchmove', drag, {passive: false});
+        canvas.addEventListener('mouseup', endDrag);
+        canvas.addEventListener('touchend', endDrag);
+
+        function startDrag(e) {
+            e.preventDefault();
+            const pos = getCanvasCoordinates(e);
+
+            for (let i = shapes.length - 1; i >= 0; i--) {
+                if (shapes[i].contains(pos.x, pos.y)) {
+                    selectedShapeIndex = i;
+                    isDragging = true;
+                    dragOffsetX = pos.x - shapes[i].x;
+                    dragOffsetY = pos.y - shapes[i].y;
+                    
+                    const sh = shapes.splice(i, 1)[0];
+                    shapes.push(sh);
+                    selectedShapeIndex = shapes.length - 1;
+                    updateUI();
+                    return;
+                }
+            }
+            selectedShapeIndex = null;
+            updateUI();
+        }
+
+        function drag(e) {
+            if (!isDragging || selectedShapeIndex === null) return;
+            e.preventDefault();
+            const pos = getCanvasCoordinates(e);
+            shapes[selectedShapeIndex].x = pos.x - dragOffsetX;
+            shapes[selectedShapeIndex].y = pos.y - dragOffsetY;
+        }
+
+        function endDrag() {
+            isDragging = false;
+        }
+
+        function rotateSelected(deg) {
+            if (selectedShapeIndex === null || !shapes[selectedShapeIndex]) return;
+            shapes[selectedShapeIndex].rotation += (deg * Math.PI / 180);
+            updateUI();
+        }
+
+        function duplicateSelected() {
+            if (selectedShapeIndex === null || !shapes[selectedShapeIndex]) return;
+            const original = shapes[selectedShapeIndex];
+            const lvl = levels[currentLevel];
+            const newShape = new PolygonShape(lvl.sourceShape, original.x + 25, original.y + 25);
+            newShape.rotation = original.rotation;
+            shapes.push(newShape);
+            selectedShapeIndex = shapes.length - 1;
+            updateUI();
+        }
+
+        function deleteSelected() {
+            if (selectedShapeIndex === null || shapes.length <= 1) return;
+            shapes.splice(selectedShapeIndex, 1);
+            selectedShapeIndex = shapes.length - 1;
+            updateUI();
+        }
+
+        function switchLevel(lvl) {
+            initLevel(lvl);
+        }
+
+        function resetCurrentLevel() {
+            initLevel(currentLevel);
+        }
+
+        function updateUI() {
+            document.getElementById('score-counter').innerText = `복사된 조각: ${shapes.length}개`;
+            document.getElementById('selected-info').innerText = selectedShapeIndex !== null ? `#${selectedShapeIndex + 1}` : "없음";
+        }
+
+        function checkCompletion() {
+            const lvl = levels[currentLevel];
+            if (shapes.length >= lvl.requiredCount) {
+                showModal("🎉 성공!", `작은 조각 ${shapes.length}개로 목표 도형을 채웠습니다!`);
+            } else {
+                showModal("💡 조금 더!", `현재 조각 수: ${shapes.length}개 (필요한 조각 수: ${lvl.requiredCount}개)`);
+            }
+        }
+
+        function showModal(title, desc) {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-desc').innerText = desc;
+            document.getElementById('message-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('message-modal').classList.add('hidden');
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Subtle background grid
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.03)';
+            ctx.lineWidth = 1;
+            const gridSize = 35;
+            for (let x = 0; x < canvas.width; x += gridSize) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += gridSize) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+            }
+
+            if (targetShapeObj) targetShapeObj.draw(ctx, false);
+            shapes.forEach((sh, idx) => sh.draw(ctx, idx === selectedShapeIndex));
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.onload = function() {
+            resizeCanvas();
+            initLevel(1);
+            gameLoop();
+        };
+    </script>
+</body>
+</html>
